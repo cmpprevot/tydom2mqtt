@@ -20,8 +20,13 @@ class TydomClient:
             self,
             mac,
             password,
+            polling_interval,
+            thermostat_cool_mode_temp_default,
+            thermostat_heat_mode_temp_default,
+            host=MEDIATION_URL,
             alarm_pin=None,
-            host=MEDIATION_URL):
+            thermostat_custom_presets=None):
+
         logger.debug("Initializing TydomClient Class")
 
         self.password = password
@@ -40,6 +45,20 @@ class TydomClient:
         # Some devices (like Tywatt) need polling
         self.poll_device_urls = []
         self.current_poll_index = 0
+        self.in_memory = {}
+        self.polling_interval = int(polling_interval)
+
+        if thermostat_custom_presets is None:
+            self.thermostat_custom_presets = None
+        else:
+            self.thermostat_custom_presets = json.loads(
+                thermostat_custom_presets)
+            self.current_preset = {}
+
+        self.thermostat_cool_mode_temp_default = int(
+            thermostat_cool_mode_temp_default)
+        self.thermostat_heat_mode_temp_default = int(
+            thermostat_heat_mode_temp_default)
 
         # Set Host, ssl context and prefix for remote or local connection
         if self.host == MEDIATION_URL:
@@ -87,8 +106,10 @@ class TydomClient:
             response.close()
             access_token = json_response["access_token"]
 
-            response = requests.get(DELTADORE_API_SITES + macaddress,
-                                    headers={"Authorization": f"Bearer {access_token}"})
+            response = requests.get(
+                DELTADORE_API_SITES + macaddress,
+                headers={
+                    "Authorization": f"Bearer {access_token}"})
 
             json_response = response.json()
             response.close()
@@ -100,7 +121,8 @@ class TydomClient:
                 and "gateway" in json_response["sites"][0]
             ):
                 password = json_response["sites"][0]["gateway"]["password"]
-
+            logger.debug("Your Tydom password : %s",
+                         json_response["sites"][0]["gateway"]["password"])
             return password
 
         except Exception as exception:
@@ -144,7 +166,8 @@ class TydomClient:
         websocket_headers = {}
         try:
             # Local installations are unauthenticated but we don't *know* that for certain
-            # so we'll EAFP, try to use the header and fallback if we're unable.
+            # so we'll EAFP, try to use the header and fallback if we're
+            # unable.
             nonce = res.headers["WWW-Authenticate"].split(",", 3)
             # Build websocket headers
             websocket_headers = {
@@ -279,10 +302,12 @@ class TydomClient:
         # Credits to @mgcrea on github !
         # AWAY # "PUT /devices/{}/endpoints/{}/cdata?name=alarmCmd HTTP/1.1\r\ncontent-length: 29\r\ncontent-type: application/json; charset=utf-8\r\ntransac-id: request_124\r\n\r\n\r\n{"value":"ON","pwd":{}}\r\n\r\n"
         # HOME "PUT /devices/{}/endpoints/{}/cdata?name=zoneCmd HTTP/1.1\r\ncontent-length: 41\r\ncontent-type: application/json; charset=utf-8\r\ntransac-id: request_46\r\n\r\n\r\n{"value":"ON","pwd":"{}","zones":[1]}\r\n\r\n"
-        # DISARM "PUT /devices/{}/endpoints/{}/cdata?name=alarmCmd
+        # DISARM "PUT /devices/{}/endpoints/{}/cdata?name=alarmCmd HTTP/1.1\r\ncontent-length: 30\r\ncontent-type: application/json; charset=utf-8\r\ntransac-id: request_7\r\n\r\n\r\n{"value":"OFF","pwd":"{}"}\r\n\r\n"
+        # PANIC (Active la sirène) "PUT
+        # /devices/{}/endpoints/{}/cdata?name=alarmCmd
         # HTTP/1.1\r\ncontent-length: 30\r\ncontent-type: application/json;
         # charset=utf-8\r\ntransac-id:
-        # request_7\r\n\r\n\r\n{"value":"OFF","pwd":"{}"}\r\n\r\n"
+        # request_7\r\n\r\n\r\n{"value":"PANIC","pwd":"{}"}\r\n\r\n"
 
         # variables:
         # id
@@ -295,8 +320,10 @@ class TydomClient:
             logger.warning("Tydom alarm pin is not set!")
             pass
         try:
-
-            if zone_id is None:
+            if value == "ACK":
+                cmd = "ackEventCmd"
+                body = ('{"pwd":"' + str(self.alarm_pin) + '"}')
+            elif zone_id is None:
                 cmd = "alarmCmd"
                 body = ('{"value":"' + str(value) +
                         '","pwd":"' + str(self.alarm_pin) + '"}')
@@ -347,17 +374,15 @@ class TydomClient:
 
     # Refresh (all)
     async def post_refresh(self):
+        logger.debug("running post_refresh")
         msg_type = "/refresh/all"
         req = "POST"
         await self.send_message(method=req, msg=msg_type)
         # Get poll device data
         nb_poll_devices = len(self.poll_device_urls)
-        if self.current_poll_index < nb_poll_devices - 1:
-            self.current_poll_index = self.current_poll_index + 1
-        else:
-            self.current_poll_index = 0
-        if nb_poll_devices > 0:
-            await self.get_poll_device_data(self.poll_device_urls[self.current_poll_index])
+        logger.debug("nb_poll_devices : %d", nb_poll_devices)
+        for polling_device in self.poll_device_urls:
+            await self.get_poll_device_data(polling_device)
 
     # Get the moments (programs)
     async def get_moments(self):
@@ -436,6 +461,7 @@ class TydomClient:
         await self.connection.send(a_bytes)
 
     async def get_poll_device_data(self, url):
+        logger.debug("get_poll_device_data : %s", url)
         msg_type = url
         req = "GET"
         await self.send_message(method=req, msg=msg_type)
@@ -445,3 +471,35 @@ class TydomClient:
         await self.get_info()
         await self.post_refresh()
         await self.get_data()
+
+    async def get_thermostat_custom_presets(self):
+        logger.debug("get presets")
+        return self.thermostat_custom_presets
+
+    async def get_thermostat_custom_current_preset(self, boiler_id):
+        logger.debug("get preset for %s", boiler_id)
+        if str(boiler_id) not in self.current_preset:
+            await self.set_thermostat_custom_current_preset(str(boiler_id), "none")
+        return self.current_preset[str(boiler_id)]
+
+    async def set_thermostat_custom_current_preset(self, boiler_id, preset):
+        logger.debug("set preset %s for %s", preset, boiler_id)
+        self.current_preset[str(boiler_id)] = str(preset)
+
+    async def set_in_memory(self, id, name, value):
+        logger.debug("set %s, %s : %s in memory", id, name, value)
+        if id not in self.in_memory:
+            self.in_memory |= {id: {name: value}}
+        else:
+            self.in_memory[id] |= {name: value}
+        logger.debug("Memory state : %s", self.in_memory)
+
+    async def get_in_memory(self, id, name=None):
+        logger.debug("get %s, %s in memory", id, name)
+        if name is None:
+            return self.in_memory[id]
+        else:
+            if id in self.in_memory:
+                if name in self.in_memory[id]:
+                    return self.in_memory[id][name]
+            return None

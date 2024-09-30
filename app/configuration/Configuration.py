@@ -21,8 +21,13 @@ TYDOM_ALARM_PIN = 'TYDOM_ALARM_PIN'
 TYDOM_IP = 'TYDOM_IP'
 TYDOM_MAC = 'TYDOM_MAC'
 TYDOM_PASSWORD = 'TYDOM_PASSWORD'
+TYDOM_POLLING_INTERVAL = 'TYDOM_POLLING_INTERVAL'
 DELTADORE_LOGIN = 'DELTADORE_LOGIN'
 DELTADORE_PASSWORD = 'DELTADORE_PASSWORD'
+THERMOSTAT_CUSTOM_PRESETS = 'THERMOSTAT_CUSTOM_PRESETS'
+THERMOSTAT_COOL_MODE_TEMP_DEFAULT = 'THERMOSTAT_COOL_MODE_TEMP_DEFAULT'
+THERMOSTAT_HEAT_MODE_TEMP_DEFAULT = 'THERMOSTAT_HEAT_MODE_TEMP_DEFAULT'
+
 
 @dataclass
 class Configuration:
@@ -38,6 +43,10 @@ class Configuration:
     tydom_ip = str
     tydom_mac = str
     tydom_password = str
+    thermostat_custom_presets = list
+    thermostat_cool_mode_temp_default = int
+    thermostat_heat_mode_temp_default = int
+    tydom_polling_interval = int
 
     def __init__(self):
         self.log_level = os.getenv(LOG_LEVEL, 'INFO').upper()
@@ -52,8 +61,15 @@ class Configuration:
         self.tydom_ip = os.getenv(TYDOM_IP, 'mediation.tydom.com')
         self.tydom_mac = os.getenv(TYDOM_MAC, None)
         self.tydom_password = os.getenv(TYDOM_PASSWORD, None)
+        self.tydom_polling_interval = os.getenv(TYDOM_POLLING_INTERVAL, 300)
         self.deltadore_login = os.getenv(DELTADORE_LOGIN, None)
         self.deltadore_password = os.getenv(DELTADORE_PASSWORD, None)
+        self.thermostat_custom_presets = os.getenv(
+            THERMOSTAT_CUSTOM_PRESETS, None)
+        self.thermostat_cool_mode_temp_default = os.getenv(
+            THERMOSTAT_COOL_MODE_TEMP_DEFAULT, 26)
+        self.thermostat_heat_mode_temp_default = os.getenv(
+            THERMOSTAT_HEAT_MODE_TEMP_DEFAULT, 16)
 
     @staticmethod
     def load():
@@ -85,6 +101,10 @@ class Configuration:
                     if TYDOM_PASSWORD in data and data[TYDOM_PASSWORD] != '':
                         self.tydom_password = data[TYDOM_PASSWORD]
 
+                    if TYDOM_POLLING_INTERVAL in data and data[TYDOM_POLLING_INTERVAL] != '':
+                        self.tydom_polling_interval = int(
+                            data[TYDOM_POLLING_INTERVAL])
+
                     if DELTADORE_LOGIN in data and data[DELTADORE_LOGIN] != '':
                         self.deltadore_login = data[DELTADORE_LOGIN]
 
@@ -99,6 +119,12 @@ class Configuration:
 
                     if TYDOM_ALARM_NIGHT_ZONE in data and data[TYDOM_ALARM_NIGHT_ZONE] != '':
                         self.tydom_alarm_night_zone = data[TYDOM_ALARM_NIGHT_ZONE]
+
+                    if THERMOSTAT_COOL_MODE_TEMP_DEFAULT in data and data[THERMOSTAT_COOL_MODE_TEMP_DEFAULT] != '':
+                        self.thermostat_cool_mode_temp_default = data[THERMOSTAT_COOL_MODE_TEMP_DEFAULT]
+
+                    if THERMOSTAT_HEAT_MODE_TEMP_DEFAULT in data and data[THERMOSTAT_HEAT_MODE_TEMP_DEFAULT] != '':
+                        self.thermostat_heat_mode_temp_default = data[THERMOSTAT_HEAT_MODE_TEMP_DEFAULT]
 
                     if MQTT_HOST in data and data[MQTT_HOST] != '':
                         self.mqtt_host = data[MQTT_HOST]
@@ -123,19 +149,25 @@ class Configuration:
 
     def override_configuration_with_deltadore(self):
         if self.deltadore_login is not None and self.deltadore_login != '' and self.deltadore_password is not None and self.deltadore_password != '':
-            tydom_password = TydomClient.getTydomCredentials(self.deltadore_login, self.deltadore_password, self.tydom_mac)
+            tydom_password = TydomClient.getTydomCredentials(
+                self.deltadore_login, self.deltadore_password, self.tydom_mac)
             self.tydom_password = tydom_password
 
     def validate(self):
         configuration_to_print = copy.copy(self)
 
         # Mask sensitive values before logging
-        configuration_to_print.tydom_password = Configuration.mask_value(configuration_to_print.tydom_password)
-        configuration_to_print.mqtt_password = Configuration.mask_value(configuration_to_print.mqtt_password)
-        configuration_to_print.deltadore_password = Configuration.mask_value(configuration_to_print.deltadore_password)
-        configuration_to_print.tydom_alarm_pin = Configuration.mask_value(configuration_to_print.tydom_alarm_pin)
+        configuration_to_print.tydom_password = Configuration.mask_value(
+            configuration_to_print.tydom_password)
+        configuration_to_print.mqtt_password = Configuration.mask_value(
+            configuration_to_print.mqtt_password)
+        configuration_to_print.deltadore_password = Configuration.mask_value(
+            configuration_to_print.deltadore_password)
+        configuration_to_print.tydom_alarm_pin = Configuration.mask_value(
+            configuration_to_print.tydom_alarm_pin)
 
-        logger.info('Validating configuration (%s', configuration_to_print.to_json())
+        logger.info('Validating configuration (%s',
+                    configuration_to_print.to_json())
 
         if self.tydom_mac is None or self.tydom_mac == '':
             logger.error('Tydom MAC address must be defined')
@@ -148,7 +180,11 @@ class Configuration:
         logger.info('The configuration is valid')
 
     def to_json(self):
-        return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
+        return json.dumps(
+            self,
+            default=lambda o: o.__dict__,
+            sort_keys=True,
+            indent=4)
 
     @staticmethod
     def mask_value(value, nb=1, char='*'):

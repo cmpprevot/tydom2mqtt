@@ -265,6 +265,7 @@ class MessageHandler:
         bytes_str = self.incoming_bytes
         incoming = None
         first = str(bytes_str[:40])
+
         try:
             if "Uri-Origin: /refresh/all" in first in first:
                 pass
@@ -317,7 +318,9 @@ class MessageHandler:
 
         except Exception as e:
             logger.error(
-                'Technical error when parsing tydom message (error=%s), (message=%s)', e, bytes_str)
+                'Technical error when parsing tydom message (error=%s), (message=%s)',
+                e,
+                bytes_str)
             logger.debug('Incoming payload (%s)', incoming)
             logger.exception(e)
 
@@ -343,7 +346,7 @@ class MessageHandler:
                 msg_type = 'msg_info'
 
             if msg_type is None:
-                logger.warning('Unknown message type received', data)
+                logger.warning('Unknown message type received (%s)', data)
             else:
                 logger.debug('Message received detected as (%s)', msg_type)
                 try:
@@ -463,14 +466,14 @@ class MessageHandler:
         logger.debug('Metadata configuration updated')
 
     async def parse_devices_data(self, parsed):
-        if (type(parsed) is list):
+        if (isinstance(parsed, list)):
             for i in parsed:
                 if "endpoints" in i:  # case of GET /devices/data
                     for endpoint in i["endpoints"]:
                         await self.parse_endpoint_data(endpoint, i["id"])
                 else:  # case of GET /areas/data
                     await self.parse_endpoint_data(i, i["id"])
-        elif (type(parsed) is dict):
+        elif (isinstance(parsed, dict)):
             await self.parse_endpoint_data(parsed, parsed["id"])
         else:
             logger.error('Unknown data type')
@@ -758,7 +761,8 @@ class MessageHandler:
                     if (sos_state):
                         logger.warning("SOS !")
 
-                    #alarm shall be update Whatever its state because sensor can be updated without any state
+                    # alarm shall be update Whatever its state because sensor
+                    # can be updated without any state
                     alarm = Alarm(
                         current_state=state,
                         alarm_pin=self.tydom_client.alarm_pin,
@@ -822,9 +826,13 @@ class MessageHandler:
                                 elif elem["name"] == "energyInstant":
                                     device_class_of_id = 'current'
                                     state_class_of_id = 'measurement'
-                                    unit_of_measurement_of_id = 'VA'
+                                    unit_of_measurement_of_id = 'A'
                                     element_name = elem["parameters"]["unit"]
                                     element_index = 'measure'
+
+                                    element_value = elem["values"][element_index]
+                                    if element_value is not None and type(element_value) == int:
+                                        element_value = element_value / 100
 
                                     attr_conso = {
                                         'device_id': device_id,
@@ -835,7 +843,7 @@ class MessageHandler:
                                         'device_class': device_class_of_id,
                                         'state_class': state_class_of_id,
                                         'unit_of_measurement': unit_of_measurement_of_id,
-                                        element_name: elem["values"][element_index]}
+                                        element_name: element_value}
 
                                     new_conso = Sensor(
                                         elem_name=element_name,

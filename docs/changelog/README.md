@@ -1,5 +1,32 @@
 # Changelog
 
+# 3.5.2
+- :fire: Fix HVAC actions on cooling mode
+
+# 3.5.1
+- :fire: Fix configuration not overrided when using HASS.io
+
+# 3.5.0
+- :star: Add HVAC switch mode
+
+# 3.4.3
+- :star: Add device polling 
+- :star: Add HVAC cool mode
+- :star: Automatically set HVAC action when setpoint > current temp
+
+# 3.4.2
+- :star: Add `PANIC` and `ACK` alarm commands
+- :star: Add `state_class` to Home-Assistant energy sensors
+- :fire: Fix `websocket is not defined` error
+- :fire: Fix `syntax error` on light component
+
+# 3.4.1
+- :fire: Fix thermostat custom presets when not used
+
+# 3.4.0
+- :star: Add thermostat custom presets
+- :fire: Fix uncaught exception at startup
+
 # 3.3.1
 - :fire: Fix HA 2023.8 mqtt entity naming convention warnings
 - :fire: Fix Alarm attributes not updated
